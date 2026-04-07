@@ -12,6 +12,9 @@ Tailslayer is a C++ library that reduces tail latency in RAM reads caused by DRA
 
 It replicates data across multiple, independent DRAM channels with uncorrelated refresh schedules, using (undocumented!) channel scrambling offsets that works on AMD, Intel, and Graviton. Once the request comes in, Tailslayer issues hedged reads across all replicas, allowing the work to be performed on whichever result responds first.
 
+For now, Tailslayer is Linux-only and relies on Linux-specific facilities such as CPU affinity control and hugepages. The technique itself does not inherently require hugepages, but it simplifies the memory placement logic for now. 
+
+Tailslayer is designed to cut tail latency, not maximize throughput. Replication adds DRAM traffic and reduces effective memory capacity in proportion to the replica count, so there is an explicit memory tradeoff. Also note that coordination that forces workers to wait for each other will reintroduce tail coupling and defeat the purpose of tailslayer.
 
 <img width="4986" height="2796" alt="cross_platform_nway" src="https://github.com/user-attachments/assets/4b4a5614-00e4-4845-8a4b-f4adecef5b4d" />
 
@@ -42,6 +45,9 @@ int main() {
     tailslayer::pin_to_core(tailslayer::CORE_MAIN);
 
     tailslayer::HedgedReader<T, my_signal, my_work<T>> reader{};
+    const int ret = reader.init();
+    if (ret) return 1;
+
     reader.insert(0x43);
     reader.insert(0x44);
     reader.start_workers();
@@ -55,9 +61,11 @@ tailslayer::HedgedReader<T, my_signal, my_work<T>,
     tailslayer::ArgList<1, 2>,   // args to signal function
     tailslayer::ArgList<2>       // args to final work function
 > reader{};
+const int ret = reader.init();
+if (ret) return 1;
 ```
 
-You can also optionally pass in a different channel offset, channel bit, and number of replicas to the constructor. *Note:* Each insert copies the element N times where N is the number of replicas. It does the address calculation work on the backend, allowing tailslayer to act as a hedged vector that uses logical indices. Additionally, each replica is pinned to a separate core, and will spin on that core according to the signal function until the read happens.
+You can also optionally pass in a different channel offset, channel bit, and number of replicas to the constructor. *Note:* Each insert copies the element N times where N is the number of replicas. That means tailslayer is trading memory footprint and some steady-state bandwidth for better tail latency under channel stalls. It does the address calculation work on the backend, allowing tailslayer to act as a hedged vector that uses logical indices. Additionally, each replica is pinned to a separate core, and will spin on that core according to the signal function until the read happens.
 
 ## Build the example
 

@@ -1,4 +1,6 @@
 #include <tailslayer/hedged_reader.hpp>
+#include <cerrno>
+#include <cstring>
 #include <iostream>
 
 /*
@@ -45,8 +47,6 @@ int main() {
     using target_size_t = uint8_t;
     tailslayer::pin_to_core(tailslayer::CORE_MAIN);
 
-    std::cout << "Start tailslayer demo.\n";
-
     // Example with arguments
     // tailslayer::HedgedReader<target_size_t, dummy_read_signal2, dummy_final_work2<target_size_t>, tailslayer::ArgList<1, 2>, tailslayer::ArgList<2>> reader_args{};
     // reader_args.insert(0x43);
@@ -55,11 +55,28 @@ int main() {
 
     // Example with no arguments
     tailslayer::HedgedReader<target_size_t, dummy_read_signal, dummy_final_work<target_size_t>> reader{};
+    const int ret = reader.init();
+    if (ret) {
+        std::cerr << "tailslayer init failed: " << std::strerror(-ret) << "\n";
+        if (ret == -ENOMEM) {
+            std::cerr
+                << "tailslayer requires at least one free 1 GiB hugetlb page.\n"
+                << "Run the helper first:\n"
+                << "  ./scripts/enable_1g_hugepages.sh\n"
+                << "Or reserve one at runtime with:\n"
+                << "  echo 1 | sudo tee /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages\n"
+                << "If that does not work, add this GRUB cmdline and reboot:\n"
+                << "  default_hugepagesz=1G hugepagesz=1G hugepages=1\n";
+        }
+        return 1;
+    }
+
+    std::cout << "Start tailslayer demo.\n";
+
     reader.insert(0x43);
     reader.insert(0x44);
     reader.start_workers();
 
     std::cout << "End tailslayer demo.\n";
-
     return 0;
 }
