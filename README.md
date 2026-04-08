@@ -29,6 +29,7 @@ You provide the value type and two functions as template parameters:
 
 ```cpp
 #include <tailslayer/hedged_reader.hpp>
+#include <system_error>
 
 [[gnu::always_inline]] inline std::size_t my_signal() {
     // Wait for your event, then return the index to read
@@ -44,13 +45,14 @@ int main() {
     using T = uint8_t;
     tailslayer::pin_to_core(tailslayer::CORE_MAIN);
 
-    tailslayer::HedgedReader<T, my_signal, my_work<T>> reader{};
-    const int ret = reader.init();
-    if (ret) return 1;
-
-    reader.insert(0x43);
-    reader.insert(0x44);
-    reader.start_workers();
+    try {
+        tailslayer::HedgedReader<T, my_signal, my_work<T>> reader{};
+        reader.insert(0x43);
+        reader.insert(0x44);
+        reader.start_workers();
+    } catch (const std::system_error& e) {
+        return 1;
+    }
 }
 ```
 
@@ -61,9 +63,15 @@ tailslayer::HedgedReader<T, my_signal, my_work<T>,
     tailslayer::ArgList<1, 2>,   // args to signal function
     tailslayer::ArgList<2>       // args to final work function
 > reader{};
-const int ret = reader.init();
-if (ret) return 1;
 ```
+
+`HedgedReader` now uses RAII for setup:
+
+1. Construct `HedgedReader` to validate the configuration, precompute the layout, and map the hugepage-backed replica region.
+2. Call `insert(...)` to populate replicated values.
+3. Call `start_workers()` to launch the hedged readers on their assigned cores.
+
+Construction throws `std::system_error` if `mmap` or `mlock` fails, so executables should catch that and report policy-specific guidance there.
 
 You can also optionally pass in a different channel offset, channel bit, and number of replicas to the constructor. *Note:* Each insert copies the element N times where N is the number of replicas. That means tailslayer is trading memory footprint and some steady-state bandwidth for better tail latency under channel stalls. It does the address calculation work on the backend, allowing tailslayer to act as a hedged vector that uses logical indices. Additionally, each replica is pinned to a separate core, and will spin on that core according to the signal function until the read happens.
 

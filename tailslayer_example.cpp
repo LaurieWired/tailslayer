@@ -1,7 +1,7 @@
 #include <tailslayer/hedged_reader.hpp>
 #include <cerrno>
-#include <cstring>
 #include <iostream>
+#include <system_error>
 
 /*
 Example user functions that could be passed to tailslayer
@@ -47,18 +47,27 @@ int main() {
     using target_size_t = uint8_t;
     tailslayer::pin_to_core(tailslayer::CORE_MAIN);
 
-    // Example with arguments
-    // tailslayer::HedgedReader<target_size_t, dummy_read_signal2, dummy_final_work2<target_size_t>, tailslayer::ArgList<1, 2>, tailslayer::ArgList<2>> reader_args{};
-    // reader_args.insert(0x43);
-    // reader_args.insert(0x44);
-    // reader_args.start_workers();
+    try {
+        // Example with arguments
+        // tailslayer::HedgedReader<target_size_t, dummy_read_signal2, dummy_final_work2<target_size_t>, tailslayer::ArgList<1, 2>, tailslayer::ArgList<2>> reader_args{};
+        // reader_args.insert(0x43);
+        // reader_args.insert(0x44);
+        // reader_args.start_workers();
 
-    // Example with no arguments
-    tailslayer::HedgedReader<target_size_t, dummy_read_signal, dummy_final_work<target_size_t>> reader{};
-    const int ret = reader.init();
-    if (ret) {
-        std::cerr << "tailslayer init failed: " << std::strerror(-ret) << "\n";
-        if (ret == -ENOMEM) {
+        // Example with no arguments
+        tailslayer::HedgedReader<target_size_t, dummy_read_signal, dummy_final_work<target_size_t>> reader{};
+
+        std::cout << "Start tailslayer demo.\n";
+
+        reader.insert(0x43);
+        reader.insert(0x44);
+        reader.start_workers();
+
+        std::cout << "End tailslayer demo.\n";
+        return 0;
+    } catch (const std::system_error& e) {
+        std::cerr << "tailslayer setup failed: " << e.what() << "\n";
+        if (e.code().value() == ENOMEM) {
             std::cerr
                 << "tailslayer requires at least one free 1 GiB hugetlb page.\n"
                 << "Run the helper first:\n"
@@ -70,13 +79,4 @@ int main() {
         }
         return 1;
     }
-
-    std::cout << "Start tailslayer demo.\n";
-
-    reader.insert(0x43);
-    reader.insert(0x44);
-    reader.start_workers();
-
-    std::cout << "End tailslayer demo.\n";
-    return 0;
 }

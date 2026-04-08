@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -O3 -std=c++17 -pthread -D_GNU_SOURCE -Iinclude
+CXXFLAGS = -O3 -DNDEBUG -std=c++17 -pthread -D_GNU_SOURCE -Iinclude
 LDFLAGS = -pthread
 
 TARGET = tailslayer_example

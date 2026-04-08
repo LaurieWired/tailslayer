@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cerrno>
 #include <cstring>
+#include <system_error>
 #include <sys/mman.h>
 #include <sched.h>
 #include <unistd.h>
@@ -101,14 +102,20 @@ public:
         for (std::size_t i = 2; i < N; ++i) {
             cores_[i] = CORE_MEAS_B + i - 1;
         }
+
+        map_replica_memory_or_throw();
     }
+
+    HedgedReader(const HedgedReader&) = delete;
+    HedgedReader& operator=(const HedgedReader&) = delete;
+    HedgedReader(HedgedReader&&) = delete;
+    HedgedReader& operator=(HedgedReader&&) = delete;
 
     std::size_t size() const { return logical_index_; }
     std::size_t capacity() const { return capacity_; }
-    int init() { return setup_memory(); }
     
     void insert(T val) {
-        assert(replica_page_ && "Call init() before using HedgedReader");
+        assert(replica_page_ && "HedgedReader construction must complete before use");
         assert(logical_index_ + 1 < capacity_ && "Tried to insert out of bounds");
         for (std::size_t i = 0; i < N; ++i) {
             // We have to keep accounting for making sure we're on different channels
@@ -122,7 +129,7 @@ public:
     }
 
     void start_workers() {
-        assert(replica_page_ && "Call init() before using HedgedReader");
+        assert(replica_page_ && "HedgedReader construction must complete before starting workers");
         for (std::size_t i = 0; i < N; ++i) {
             workers_[i] = std::thread(&HedgedReader::worker_func, this, i);
         }
@@ -187,9 +194,9 @@ private:
         return replicas_[replica_idx] + element_offset;
     }
 
-    int setup_memory() {
+    void map_replica_memory_or_throw() {
         if (replica_page_) {
-            return 0;
+            return;
         }
 
         replica_page_ = mmap(nullptr, SUPERPAGE_SIZE, PROT_READ | PROT_WRITE,
@@ -198,18 +205,21 @@ private:
         if (replica_page_ == MAP_FAILED) {
             const int saved_errno = errno;
             replica_page_ = nullptr;
-            return -saved_errno;
+            throw std::system_error(saved_errno, std::generic_category(), "tailslayer mmap");
         }
         
         std::memset(replica_page_, 0x42, SUPERPAGE_SIZE);
-        mlock(replica_page_, SUPERPAGE_SIZE);
+        if (mlock(replica_page_, SUPERPAGE_SIZE) != 0) {
+            const int saved_errno = errno;
+            munmap(replica_page_, SUPERPAGE_SIZE);
+            replica_page_ = nullptr;
+            throw std::system_error(saved_errno, std::generic_category(), "tailslayer mlock");
+        }
 
         char* base = static_cast<char*>(replica_page_);
         for (std::size_t i = 0; i < N; ++i) {
             replicas_[i] = reinterpret_cast<T*>(base + (i * channel_offset_));
         }
-
-        return 0;
     }
 
 };

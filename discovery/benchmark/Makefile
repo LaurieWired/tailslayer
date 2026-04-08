@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -O2 -std=c++17 -pthread -D_GNU_SOURCE
+CXXFLAGS = -O2 -DNDEBUG -std=c++17 -pthread -D_GNU_SOURCE
 LDFLAGS = -pthread
 
 OBJS = app_config.o benchmark.o stats.o main.o
