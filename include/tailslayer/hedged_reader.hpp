@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sched.h>
 #include <unistd.h>
+#include <immintrin.h>
 
 namespace tailslayer {
 
@@ -48,6 +49,16 @@ namespace detail {
                     : "=a"(lo), "=d"(hi), "=c"(aux));
         asm volatile("lfence" ::: "memory");
         return (hi << 32) | lo;
+    }
+
+    static inline void yield() {
+#if defined(__x86_64__) || defined(__i386__)
+        _mm_pause();   // x86
+#elif defined(__aarch64__) || defined(__arm__)
+        asm volatile("yield" ::: "memory");
+#else
+        std::this_thread::yield(); // fallback
+#endif
     }
 } // namespace detail
 
@@ -118,8 +129,12 @@ public:
         for (std::size_t i = 0; i < N; ++i) {
             workers_[i] = std::thread(&HedgedReader::worker_func, this, i);
         }
-        usleep(10000); // 10ms delay to make sure the workers are started
-                        // If you don't do this, it freezes because the workers can't get to their cores
+        
+        // Wait for all workers to set their ready flag
+        for (std::size_t i = 0; i < N; ++i) {
+            while (!worker_ready_[i].load(std::memory_order_acquire)) // Spinning here, avoids context switching as opposed to using condition variables and should be totally fine...
+                 detail::yield();
+        }
     }
 
     ~HedgedReader() {
@@ -148,9 +163,11 @@ private:
     std::array<T*, N> replicas_{};
     std::array<int, N> cores_{};
     std::array<std::thread, N> workers_{};
+    std::array<std::atomic<bool>, N> worker_ready_{{false}};
 
     void worker_func(std::size_t worker_idx) {
         pin_to_core(cores_[worker_idx]);
+        worker_ready_[worker_idx].store(true, std::memory_order_release);
 
         std::size_t read_index = wait_work(WaitArgs...);
 
