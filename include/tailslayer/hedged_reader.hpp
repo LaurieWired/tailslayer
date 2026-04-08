@@ -23,6 +23,7 @@ inline constexpr std::uint64_t SUPERPAGE_SIZE = (1ULL << 30);
 inline constexpr int CORE_MEAS_A = 11;
 inline constexpr int CORE_MEAS_B = 12;
 inline constexpr int CORE_MAIN = 14;
+inline constexpr int WORKER_START_DELAY_US = 10000; // 10ms delay to ensure workers are started
 
 namespace detail {
     static inline void clflush_addr(void *addr) {
@@ -107,8 +108,6 @@ public:
             // We have to keep accounting for making sure we're on different channels
             //  especially when we exceed the channel offset size
             T* target_addr = get_next_logical_index_address(i, logical_index_);
-
-            //std::cout << "Storing value: " << +val << " at address: " << (void*) target_addr << "\n";
             *target_addr = val;
         }
         ++logical_index_;
@@ -118,8 +117,9 @@ public:
         for (std::size_t i = 0; i < N; ++i) {
             workers_[i] = std::thread(&HedgedReader::worker_func, this, i);
         }
-        usleep(10000); // 10ms delay to make sure the workers are started
-                        // If you don't do this, it freezes because the workers can't get to their cores
+        // Delay to ensure workers have started and reached their pinned cores
+        // Without this, the main thread may proceed before workers are ready
+        usleep(WORKER_START_DELAY_US);
     }
 
     ~HedgedReader() {
@@ -154,20 +154,11 @@ private:
 
         std::size_t read_index = wait_work(WaitArgs...);
 
-        // Only for quick sanity check benchmark counting cycles
-        // T* flush_addr = get_next_logical_index_address(worker_idx, read_index);
-        // detail::clflush_addr(flush_addr);
-        // detail::mfence_inst();
-        // std::uint64_t t0 = detail::rdtsc_lfence();
-
         T* target_addr = get_next_logical_index_address(worker_idx, read_index);
 
         // The actual read of the data
         // Passed directly to the inline worker function for processing
         final_work(*target_addr, WorkArgs...);
-
-        // std::uint64_t t1 = detail::rdtscp_lfence();
-        // std::cout << "\nRunning time: " << t1 - t0 << " cycles\n";
     }
 
     [[gnu::always_inline]] inline T* get_next_logical_index_address(std::size_t replica_idx,
@@ -198,9 +189,14 @@ private:
             replica_page_ = nullptr;
             return false;
         }
-        
+
         std::memset(replica_page_, 0x42, SUPERPAGE_SIZE);
-        mlock(replica_page_, SUPERPAGE_SIZE);
+        if (mlock(replica_page_, SUPERPAGE_SIZE) != 0) {
+            perror("mlock 1GB hugepage (replicas)");
+            munmap(replica_page_, SUPERPAGE_SIZE);
+            replica_page_ = nullptr;
+            return false;
+        }
 
         char* base = static_cast<char*>(replica_page_);
         for (std::size_t i = 0; i < N; ++i) {
