@@ -12,7 +12,7 @@ Tailslayer is a C++ library that reduces tail latency in RAM reads caused by DRA
 
 It replicates data across multiple, independent DRAM channels with uncorrelated refresh schedules, using (undocumented!) channel scrambling offsets that works on AMD, Intel, and Graviton. Once the request comes in, Tailslayer issues hedged reads across all replicas, allowing the work to be performed on whichever result responds first.
 
-For now, Tailslayer is Linux-only and relies on Linux-specific facilities such as CPU affinity control and hugepages. The technique itself does not inherently require hugepages, but it simplifies the memory placement logic for now. 
+For now, Tailslayer is x86 only and relies on Linux-specific facilities such as CPU affinity control and hugepages. The technique itself does not inherently require hugepages, but it simplifies the memory placement logic for now. 
 
 Tailslayer is designed to cut tail latency, not maximize throughput. Replication adds DRAM traffic and reduces effective memory capacity in proportion to the replica count, so there is an explicit memory tradeoff. Also note that coordination that forces workers to wait for each other will reintroduce tail coupling and defeat the purpose of tailslayer.
 
@@ -78,7 +78,7 @@ You can also optionally pass in a different channel offset, channel bit, and num
 ## Build the example
 
 ```bash
-make
+make clean && make DEBUG=1
 ./tailslayer_example
 ```
 
