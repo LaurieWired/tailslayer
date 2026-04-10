@@ -66,6 +66,28 @@ make
 ./tailslayer_example
 ```
 
+### Note for ARM64 platforms
+
+For arm64 platforms, you'll need to enable userspace access to `PMCCNTR_EL0`.
+This could be done with modules like [armv8_pmu_cycle_counter_el0](https://github.com/jerinjacobk/armv8_pmu_cycle_counter_el0).
+On some platforms(e.g. Nvidia Orin Nano), the cpu will revert this change when it changes state, so you'll need to run 
+```
+for X in $(seq 0 $((`nproc` - 1))); do for Y in $(seq 1 6); do echo 1 > /sys/devices/system/cpu/cpu$X/cpuidle/state$Y/disable ; done ; done
+```
+before loading the kernel module to disable all other states.
+
+You'll also need to enable 1048576kB hugepages if it's not enabled by default.
+This could be done with
+```
+echo -n 1 | sudo tee /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+```
+Tho while testing this it seems that this wont work if THP isnt enabled in the kernel, so you may need to set
+```
+CONFIG_TRANSPARENT_HUGEPAGE=y
+```
+and recompile your kernel.
+
+
 ## Benchmarks and spike timing
 
 The `discovery/` directory contains supporting code used to characterize DRAM refresh behavior:
