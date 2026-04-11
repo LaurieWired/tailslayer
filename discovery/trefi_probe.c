@@ -27,36 +27,74 @@
 
 static inline uint64_t rdtsc_lfence(void)
 {
+#if defined(__aarch64__)
+    uint64_t tsc_val;
+    asm volatile("isb\n\t"
+                 "mrs %0, pmccntr_el0"
+                 : "=r" (tsc_val));
+    return tsc_val;
+#else
     uint64_t lo, hi;
     asm volatile("lfence\n\t"
                  "rdtsc"
                  : "=a"(lo), "=d"(hi));
     return (hi << 32) | lo;
+#endif
 }
 
 static inline uint64_t rdtscp_lfence(void)
 {
+#if defined(__aarch64__)
+    uint64_t val;
+    asm volatile(
+        "isb\n\t"
+        "mrs %0, pmccntr_el0\n\t"
+        "isb"
+        : "=r"(val)
+        :
+        : "memory"
+    );
+    return val;
+#else
     uint64_t lo, hi;
     uint32_t aux;
     asm volatile("rdtscp"
                  : "=a"(lo), "=d"(hi), "=c"(aux));
     asm volatile("lfence" ::: "memory");
     return (hi << 32) | lo;
+#endif
 }
 
 static inline void clflush_addr(volatile void *addr)
 {
+#if defined(__aarch64__)
+    asm volatile(
+        "dc civac, %0\n\t"
+        "dsb sy\n\t"
+        :: "r"(addr)
+        : "memory"
+    );
+#else
     asm volatile("clflush (%0)" :: "r"(addr) : "memory");
+#endif
 }
 
 static inline void mfence_inst(void)
 {
+#if defined(__aarch64__)
+    asm volatile("dmb ish" ::: "memory");
+#else
     asm volatile("mfence" ::: "memory");
+#endif
 }
 
 static inline void lfence_inst(void)
 {
+#if defined(__aarch64__)
+    asm volatile("dsb ld\n\t" "isb" ::: "memory");
+#else
     asm volatile("lfence" ::: "memory");
+#endif
 }
 
 // TSC frequency calibration
