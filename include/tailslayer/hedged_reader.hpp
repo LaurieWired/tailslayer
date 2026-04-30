@@ -2,6 +2,7 @@
 #define TAILSLAYER_HEDGED_READER_HPP
 
 #include <iostream>
+#include <stdexcept>
 #include <array>
 #include <thread>
 #include <atomic>
@@ -99,7 +100,9 @@ public:
         std::size_t max_strides = SUPERPAGE_SIZE / stride_bytes;
         capacity_ = max_strides * elements_per_chunk;
 
-        setup_memory();
+        if (!setup_memory()) {
+            throw std::runtime_error("Failed to allocate memory for tailslayer (hugepage mmap failed)");
+        }
         setup_replica_cores();
     }
 
